@@ -49,15 +49,29 @@ public:
 	void ResetInput(int Dummy);
 	bool CheckNewInput();
 
-private:
-        static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
-        static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
-        static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
-        static void ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData);
+	void AvoidFreeze();
+	void HookAssist();
 
-        void HookAssist();
-        int HookAssistPredictionTicks() const;
-        bool PredictHookDanger(const CNetObj_PlayerInput &Input, int LocalClientId, int PredictionTicks);
-        bool HookAssistDetectDanger(const CCharacter *pChar) const;
+private:
+	static int64_t s_LastAvoidTime;
+	static int64_t s_LastActiveCheckTime;
+	static const int64_t ACTIVE_COOLDOWN;
+
+	bool IsPlayerInDanger(int LocalPlayerId);
+	bool GetFreeze(vec2 Pos, int FreezeTime);
+	bool IsAvoidCooldownElapsed(int64_t CurrentTime);
+	void UpdateAvoidCooldown(int64_t CurrentTime);
+	bool PredictFreeze(const CNetObj_PlayerInput &Input, int Ticks);
+	bool TryAvoidFreeze(int LocalPlayerId);
+	bool IsPlayerActive(int LocalPlayerId);
+
+	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
+	static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
+	static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
+	static void ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData);
+
+	int HookAssistPredictionTicks() const;
+	bool PredictHookDanger(const CNetObj_PlayerInput &Input, int LocalClientId, int PredictionTicks);
+	bool HookAssistDetectDanger(const CCharacter *pChar) const;
 };
 #endif
