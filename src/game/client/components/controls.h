@@ -11,6 +11,8 @@
 #include <game/client/component.h>
 #include <generated/protocol.h>
 
+class CCharacter;
+
 class CControls : public CComponent
 {
 public:
@@ -48,9 +50,14 @@ public:
 	bool CheckNewInput();
 
 private:
-	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
-	static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
-	static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
-	static void ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData);
+        static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
+        static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);
+        static void ConKeyInputSet(IConsole::IResult *pResult, void *pUserData);
+        static void ConKeyInputNextPrevWeapon(IConsole::IResult *pResult, void *pUserData);
+
+        void HookAssist();
+        int HookAssistPredictionTicks() const;
+        bool PredictHookDanger(const CNetObj_PlayerInput &Input, int LocalClientId, int PredictionTicks);
+        bool HookAssistDetectDanger(const CCharacter *pChar) const;
 };
 #endif

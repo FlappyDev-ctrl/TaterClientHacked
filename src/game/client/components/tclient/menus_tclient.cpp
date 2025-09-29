@@ -492,16 +492,25 @@ void CMenus::RenderSettingsTClientSettngs(CUIRect MainView)
 	DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcFastInput, TCLocalize("Fast Inputs (-20ms visual delay)"), &g_Config.m_TcFastInput, &Column, LineSize);
 
 	Column.HSplitTop(MarginSmall, nullptr, &Column);
-	if(g_Config.m_TcFastInput)
-		DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcFastInputOthers, TCLocalize("Extra tick other tees (increases other tees latency, \nmakes dragging slightly easier when using fast input)"), &g_Config.m_TcFastInputOthers, &Column, LineSize);
-	else
-		Column.HSplitTop(LineSize, nullptr, &Column);
-	// A little extra spacing because these are multi line
-	Column.HSplitTop(MarginSmall, nullptr, &Column);
+        if(g_Config.m_TcFastInput)
+                DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcFastInputOthers, TCLocalize("Extra tick other tees (increases other tees latency, \nmakes dragging slightly easier when using fast input)"), &g_Config.m_TcFastInputOthers, &Column, LineSize);
+        else
+                Column.HSplitTop(LineSize, nullptr, &Column);
+        // A little extra spacing because these are multi line
+        Column.HSplitTop(MarginSmall, nullptr, &Column);
 
-	s_SectionBoxes.back().h = Column.y - s_SectionBoxes.back().y;
+        DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_ClHookAssist, TCLocalize("Enable hook assist"), &g_Config.m_ClHookAssist, &Column, LineSize);
+        if(g_Config.m_ClHookAssist)
+        {
+                Column.HSplitTop(LineSize, &Button, &Column);
+                Ui()->DoScrollbarOption(&g_Config.m_ClHookAssistCheck, &g_Config.m_ClHookAssistCheck, &Button, TCLocalize("Hook assist prediction"), 0, 5000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE, "ms");
+        }
+        else
+                Column.HSplitTop(LineSize, nullptr, &Column);
 
-	// ***** Anti Latency Tools ***** //
+        s_SectionBoxes.back().h = Column.y - s_SectionBoxes.back().y;
+
+        // ***** Anti Latency Tools ***** //
 	Column.HSplitTop(MarginBetweenSections, nullptr, &Column);
 	s_SectionBoxes.push_back(Column);
 	Column.HSplitTop(HeadlineHeight, &Label, &Column);

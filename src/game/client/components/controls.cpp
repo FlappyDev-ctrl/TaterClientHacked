@@ -10,6 +10,7 @@
 #include <game/client/components/menus.h>
 #include <game/client/components/scoreboard.h>
 #include <game/client/gameclient.h>
+#include <game/client/prediction/entities/character.h>
 #include <game/collision.h>
 
 #include <base/vmath.h>
@@ -259,12 +260,14 @@ int CControls::SnapInput(int *pData)
 		m_aInputData[g_Config.m_ClDummy].m_Direction = 0;
 		if(m_aInputDirectionLeft[g_Config.m_ClDummy] && !m_aInputDirectionRight[g_Config.m_ClDummy])
 			m_aInputData[g_Config.m_ClDummy].m_Direction = -1;
-		if(!m_aInputDirectionLeft[g_Config.m_ClDummy] && m_aInputDirectionRight[g_Config.m_ClDummy])
-			m_aInputData[g_Config.m_ClDummy].m_Direction = 1;
+                if(!m_aInputDirectionLeft[g_Config.m_ClDummy] && m_aInputDirectionRight[g_Config.m_ClDummy])
+                        m_aInputData[g_Config.m_ClDummy].m_Direction = 1;
 
-		// dummy copy moves
-		if(g_Config.m_ClDummyCopyMoves)
-		{
+                HookAssist();
+
+                // dummy copy moves
+                if(g_Config.m_ClDummyCopyMoves)
+                {
 			CNetObj_PlayerInput *pDummyInput = &GameClient()->m_DummyInput;
 			pDummyInput->m_Direction = m_aInputData[g_Config.m_ClDummy].m_Direction;
 			pDummyInput->m_Hook = m_aInputData[g_Config.m_ClDummy].m_Hook;
@@ -337,8 +340,8 @@ int CControls::SnapInput(int *pData)
 
 void CControls::OnRender()
 {
-	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
-		return;
+        if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
+                return;
 
 	if(g_Config.m_ClAutoswitchWeaponsOutOfAmmo && !GameClient()->m_GameInfo.m_UnlimitedAmmo && GameClient()->m_Snap.m_pLocalCharacter)
 	{
@@ -377,14 +380,106 @@ void CControls::OnRender()
 	}
 	else
 	{
-		m_aTargetPos[g_Config.m_ClDummy] = m_aMousePos[g_Config.m_ClDummy];
-	}
+                m_aTargetPos[g_Config.m_ClDummy] = m_aMousePos[g_Config.m_ClDummy];
+        }
+}
+
+void CControls::HookAssist()
+{
+        if(!g_Config.m_ClHookAssist)
+                return;
+
+        const int Dummy = g_Config.m_ClDummy;
+        const int LocalId = GameClient()->m_aLocalIds[Dummy];
+        if(LocalId < 0)
+                return;
+
+        CNetObj_PlayerInput &Input = m_aInputData[Dummy];
+        if(Input.m_Hook <= 0)
+                return;
+
+        const int PredictionTicks = HookAssistPredictionTicks();
+        if(PredictionTicks <= 0)
+                return;
+
+        if(PredictHookDanger(Input, LocalId, PredictionTicks))
+                Input.m_Hook = 0;
+}
+
+int CControls::HookAssistPredictionTicks() const
+{
+        if(!g_Config.m_ClHookAssist)
+                return 0;
+
+        const int DurationMs = maximum(0, g_Config.m_ClHookAssistCheck);
+        if(DurationMs <= 0)
+                return 0;
+
+        const int TickSpeed = Client()->GameTickSpeed();
+        const int Ticks = (DurationMs * TickSpeed + 999) / 1000;
+        return maximum(1, Ticks);
+}
+
+bool CControls::PredictHookDanger(const CNetObj_PlayerInput &Input, int LocalClientId, int PredictionTicks)
+{
+        if(PredictionTicks <= 0)
+                return false;
+
+        if(!GameClient()->Predict())
+                return false;
+
+        CGameWorld &ExtraWorld = GameClient()->m_ExtraPredictedWorld;
+        ExtraWorld.CopyWorldClean(&GameClient()->m_PredictedWorld);
+
+        CCharacter *pChar = ExtraWorld.GetCharacterById(LocalClientId);
+        if(!pChar)
+                return false;
+
+        if(HookAssistDetectDanger(pChar))
+                return true;
+
+        CNetObj_PlayerInput SimulatedInput = Input;
+        SimulatedInput.m_PlayerFlags |= PLAYERFLAG_PLAYING;
+
+        for(int i = 0; i < PredictionTicks; ++i)
+        {
+                pChar->OnDirectInput(&SimulatedInput);
+                pChar->OnPredictedInput(&SimulatedInput);
+
+                ExtraWorld.m_GameTick++;
+                ExtraWorld.Tick();
+
+                pChar = ExtraWorld.GetCharacterById(LocalClientId);
+                if(!pChar)
+                        return false;
+
+                if(HookAssistDetectDanger(pChar))
+                        return true;
+        }
+
+        return false;
+}
+
+bool CControls::HookAssistDetectDanger(const CCharacter *pChar) const
+{
+        if(!pChar)
+                return false;
+
+        if(pChar->m_FreezeTime > 0)
+                return true;
+
+        const vec2 Pos = pChar->m_Pos;
+        const int MapIndex = Collision()->GetPureMapIndex(Pos.x, Pos.y);
+        if(MapIndex < 0)
+                return false;
+
+        return Collision()->IsTeleport(MapIndex) || Collision()->IsCheckTeleport(MapIndex) || Collision()->IsCheckEvilTeleport(MapIndex) || Collision()->IsEvilTeleport(MapIndex);
 }
 
 bool CControls::OnCursorMove(float x, float y, IInput::ECursorType CursorType)
 {
-	if(GameClient()->m_Snap.m_pGameInfoObj && (GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_PAUSED))
-		return false;
+        if(GameClient()->m_Snap.m_pGameInfoObj && (GameClient()->m_Snap.m_pGameInfoObj->m_GameStateFlags & GAMESTATEFLAG_PAUSED))
+                return false;
 
 	if(CursorType == IInput::CURSOR_JOYSTICK && g_Config.m_InpControllerAbsolute && GameClient()->m_Snap.m_pGameInfoObj && !GameClient()->m_Snap.m_SpecInfo.m_Active)
 	{
