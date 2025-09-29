@@ -36,6 +36,11 @@ MACRO_CONFIG_INT(TcHammerRotatesWithCursor, tc_hammer_rotates_with_cursor, 0, 0,
 
 MACRO_CONFIG_INT(TcMiniVoteHud, tc_mini_vote_hud, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "When enabled makes the vote UI small")
 
+// Freeze helpers
+MACRO_CONFIG_INT(TcAvoidFreeze, tc_avoid_freeze, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Automatically move away from nearby freeze tiles")
+MACRO_CONFIG_INT(TcAvoidFreezeDistance, tc_avoid_freeze_distance, 3, 1, 10, CFGFLAG_CLIENT | CFGFLAG_SAVE, "How many tiles around you should be scanned for freeze tiles")
+MACRO_CONFIG_INT(TcAvoidFreezeCooldownMs, tc_avoid_freeze_cooldown_ms, 700, 200, 5000, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Minimum delay between automatic freeze avoidance moves in milliseconds")
+
 // Anti Latency Tools
 MACRO_CONFIG_INT(TcRemoveAnti, tc_remove_anti, 0, 0, 1, CFGFLAG_CLIENT | CFGFLAG_SAVE, "Removes some amount of antiping & player prediction in freeze")
 MACRO_CONFIG_INT(TcUnfreezeLagTicks, tc_remove_anti_ticks, 5, 0, 20, CFGFLAG_CLIENT | CFGFLAG_SAVE, "The biggest amount of prediction ticks that are removed")

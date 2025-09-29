@@ -58,12 +58,13 @@ private:
 	static const int64_t ACTIVE_COOLDOWN;
 
 	bool IsPlayerInDanger(int LocalPlayerId);
-	bool GetFreeze(vec2 Pos, int FreezeTime);
-	bool IsAvoidCooldownElapsed(int64_t CurrentTime);
-	void UpdateAvoidCooldown(int64_t CurrentTime);
-	bool PredictFreeze(const CNetObj_PlayerInput &Input, int Ticks);
-	bool TryAvoidFreeze(int LocalPlayerId);
-	bool IsPlayerActive(int LocalPlayerId);
+        bool IsAvoidCooldownElapsed(int64_t CurrentTime);
+        void UpdateAvoidCooldown(int64_t CurrentTime);
+        bool PredictFreeze(const CNetObj_PlayerInput &Input, int Tiles, vec2 *pDangerDirection = nullptr);
+        bool TryAvoidFreeze(int LocalPlayerId, const vec2 &DangerDirection);
+        bool IsPlayerActive(int LocalPlayerId);
+        bool FindClosestFreeze(vec2 Pos, float Radius, vec2 &OutDirection, float *pOutDistanceSquared = nullptr) const;
+        static bool IsFreezeTile(int Tile);
 
 	static void ConKeyInputState(IConsole::IResult *pResult, void *pUserData);
 	static void ConKeyInputCounter(IConsole::IResult *pResult, void *pUserData);

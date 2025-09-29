@@ -510,9 +510,29 @@ void CMenus::RenderSettingsTClientSettngs(CUIRect MainView)
 
         s_SectionBoxes.back().h = Column.y - s_SectionBoxes.back().y;
 
+        // ***** Freeze helpers ***** //
+        Column.HSplitTop(MarginBetweenSections, nullptr, &Column);
+        s_SectionBoxes.push_back(Column);
+        Column.HSplitTop(HeadlineHeight, &Label, &Column);
+        Ui()->DoLabel(&Label, TCLocalize("Freeze helpers"), HeadlineFontSize, TEXTALIGN_ML);
+        Column.HSplitTop(MarginSmall, nullptr, &Column);
+
+        DoButton_CheckBoxAutoVMarginAndSet(&g_Config.m_TcAvoidFreeze, TCLocalize("Automatically avoid freeze tiles"), &g_Config.m_TcAvoidFreeze, &Column, LineSize);
+        if(g_Config.m_TcAvoidFreeze)
+        {
+                Column.HSplitTop(LineSize, &Button, &Column);
+                Ui()->DoScrollbarOption(&g_Config.m_TcAvoidFreezeDistance, &g_Config.m_TcAvoidFreezeDistance, &Button, TCLocalize("Detection radius"), 1, 10, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE, " tiles");
+                Column.HSplitTop(LineSize, &Button, &Column);
+                Ui()->DoScrollbarOption(&g_Config.m_TcAvoidFreezeCooldownMs, &g_Config.m_TcAvoidFreezeCooldownMs, &Button, TCLocalize("Reactivation delay"), 200, 5000, &CUi::ms_LinearScrollbarScale, CUi::SCROLLBAR_OPTION_NOCLAMPVALUE, " ms");
+        }
+        else
+                Column.HSplitTop(LineSize * 2, nullptr, &Column);
+
+        s_SectionBoxes.back().h = Column.y - s_SectionBoxes.back().y;
+
         // ***** Anti Latency Tools ***** //
-	Column.HSplitTop(MarginBetweenSections, nullptr, &Column);
-	s_SectionBoxes.push_back(Column);
+        Column.HSplitTop(MarginBetweenSections, nullptr, &Column);
+        s_SectionBoxes.push_back(Column);
 	Column.HSplitTop(HeadlineHeight, &Label, &Column);
 	Ui()->DoLabel(&Label, TCLocalize("Anti Latency Tools"), HeadlineFontSize, TEXTALIGN_ML);
 	Column.HSplitTop(MarginSmall, nullptr, &Column);
