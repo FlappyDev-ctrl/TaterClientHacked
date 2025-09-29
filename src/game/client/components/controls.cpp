@@ -2,6 +2,7 @@
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include <base/math.h>
 #include <algorithm>
+#include <cmath>
 
 #include <engine/client.h>
 #include <engine/shared/config.h>
@@ -13,6 +14,7 @@
 #include <game/client/gameclient.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/collision.h>
+#include <game/mapitems.h>
 
 #include <base/vmath.h>
 
@@ -394,47 +396,31 @@ void CControls::OnRender()
 
 void CControls::AvoidFreeze()
 {
-	if(!g_Config.m_DrBrc)
-		return;
+        if(!g_Config.m_TcAvoidFreeze)
+                return;
 
-	const int64_t CurrentTime = time_get();
+        const int64_t CurrentTime = time_get();
 
-	if(!IsAvoidCooldownElapsed(CurrentTime))
-		return;
+        if(!IsAvoidCooldownElapsed(CurrentTime))
+                return;
 
-	const int LocalPlayerId = g_Config.m_ClDummy;
+        const int LocalPlayerId = g_Config.m_ClDummy;
 
-	if(!IsPlayerActive(LocalPlayerId))
-		return;
+        if(!IsPlayerActive(LocalPlayerId))
+                return;
 
-	if(PredictFreeze(m_aInputData[LocalPlayerId], g_Config.m_DrBba) && TryAvoidFreeze(LocalPlayerId))
-	{
-		UpdateAvoidCooldown(CurrentTime);
-		dbg_msg("avoidfreeze", "Avoided freeze! Direction changed");
-	}
-}
-
-bool CControls::IsPlayerInDanger(int LocalPlayerId)
-{
-	return PredictFreeze(m_aInputData[LocalPlayerId], 1);
-}
-
-bool CControls::GetFreeze(vec2 Pos, int FreezeTime)
-{
-	if(FreezeTime > 0)
-		return true;
-
-	int MapIndex = Collision()->GetMapIndex(Pos);
-	return Collision()->IsTeleport(MapIndex) ||
-		Collision()->IsCheckTeleport(MapIndex) ||
-		Collision()->IsDeathTile(MapIndex);
+        vec2 DangerDirection;
+        if(PredictFreeze(m_aInputData[LocalPlayerId], g_Config.m_TcAvoidFreezeDistance, &DangerDirection) && TryAvoidFreeze(LocalPlayerId, DangerDirection))
+        {
+                UpdateAvoidCooldown(CurrentTime);
+                dbg_msg("avoidfreeze", "Avoided freeze! Direction changed");
+        }
 }
 
 bool CControls::IsAvoidCooldownElapsed(int64_t CurrentTime)
 {
-	const int64_t MinAvoidDelay = time_freq() * 500 / 1000;
-	const int64_t ConfiguredDelay = static_cast<int64_t>(g_Config.m_DrMac) * time_freq() / 1000;
-	return (CurrentTime - s_LastAvoidTime >= std::max(ConfiguredDelay, MinAvoidDelay));
+        const int64_t ConfiguredDelay = static_cast<int64_t>(maximum(1, g_Config.m_TcAvoidFreezeCooldownMs)) * time_freq() / 1000;
+        return (CurrentTime - s_LastAvoidTime >= ConfiguredDelay);
 }
 
 void CControls::UpdateAvoidCooldown(int64_t CurrentTime)
@@ -442,51 +428,153 @@ void CControls::UpdateAvoidCooldown(int64_t CurrentTime)
 	s_LastAvoidTime = CurrentTime;
 }
 
-bool CControls::PredictFreeze(const CNetObj_PlayerInput &Input, int Ticks)
+bool CControls::PredictFreeze(const CNetObj_PlayerInput &Input, int Tiles, vec2 *pDangerDirection)
 {
-	if(!GameClient()->m_Snap.m_pLocalCharacter)
-		return false;
+        (void)Input;
+        if(!GameClient()->m_Snap.m_pLocalCharacter)
+                return false;
 
-	// Если уже заморожен
-	if(GameClient()->m_Snap.m_pLocalCharacter->m_FreezeEnd > 0)
-		return true;
+        if(GameClient()->m_Snap.m_pLocalCharacter->m_FreezeEnd > 0)
+        {
+                if(pDangerDirection)
+                        *pDangerDirection = vec2(0.0f, 0.0f);
+                return true;
+        }
 
-	// Простое предсказание - проверяем текущую позицию
-	return GetFreeze(GameClient()->m_LocalCharacterPos, 0);
+        const vec2 Position = GameClient()->m_LocalCharacterPos;
+        const float SearchRadius = maximum(1, Tiles) * 32.0f;
+
+        vec2 DangerDirection = vec2(0.0f, 0.0f);
+        float DistanceSquared = SearchRadius * SearchRadius;
+        const bool FoundDanger = FindClosestFreeze(Position, SearchRadius, DangerDirection, &DistanceSquared);
+
+        if(pDangerDirection)
+                *pDangerDirection = DangerDirection;
+
+        return FoundDanger;
 }
 
-bool CControls::TryAvoidFreeze(int LocalPlayerId)
+bool CControls::TryAvoidFreeze(int LocalPlayerId, const vec2 &DangerDirection)
 {
-	const int Directions[] = {0, -1, 1};
-	const CNetObj_PlayerInput BaseInput = m_aInputData[LocalPlayerId];
+        if(!GameClient()->m_Snap.m_pLocalCharacter)
+                return false;
 
-	for(int i = 0; i < 3; i++)
-	{
-		int Direction = Directions[i];
-		if(Direction == BaseInput.m_Direction)
-			continue;
+        const vec2 Position = GameClient()->m_LocalCharacterPos;
+        const float SearchRadius = maximum(1, g_Config.m_TcAvoidFreezeDistance) * 32.0f;
 
-		CNetObj_PlayerInput ModifiedInput = BaseInput;
-		ModifiedInput.m_Direction = Direction;
+        int PreferredDirection = DangerDirection.x <= 0.0f ? 1 : -1;
+        if(absolute(DangerDirection.x) < 1.0f)
+        {
+                vec2 Dummy;
+                float LeftDistanceSquared = SearchRadius * SearchRadius;
+                const bool LeftDanger = FindClosestFreeze(Position + vec2(-32.0f, 0.0f), SearchRadius, Dummy, &LeftDistanceSquared);
+                float RightDistanceSquared = SearchRadius * SearchRadius;
+                const bool RightDanger = FindClosestFreeze(Position + vec2(32.0f, 0.0f), SearchRadius, Dummy, &RightDistanceSquared);
 
-		if(!PredictFreeze(ModifiedInput, g_Config.m_DrBba))
-		{
-			m_aInputData[LocalPlayerId].m_Direction = Direction;
-			return true;
-		}
-	}
-	return false;
+                if(LeftDanger != RightDanger)
+                        PreferredDirection = LeftDanger ? 1 : -1;
+                else if(LeftDanger && RightDanger)
+                        PreferredDirection = LeftDistanceSquared > RightDistanceSquared ? -1 : 1;
+        }
+
+        PreferredDirection = std::clamp(PreferredDirection, -1, 1);
+        if(PreferredDirection == 0)
+                PreferredDirection = 1;
+
+        if(m_aInputData[LocalPlayerId].m_Direction == PreferredDirection)
+                return false;
+
+        m_aInputData[LocalPlayerId].m_Direction = PreferredDirection;
+        return true;
+}
+
+bool CControls::IsPlayerInDanger(int LocalPlayerId)
+{
+        return PredictFreeze(m_aInputData[LocalPlayerId], 1);
 }
 
 bool CControls::IsPlayerActive(int LocalPlayerId)
 {
-	const int64_t CurrentTime = time_get();
-	if(CurrentTime - s_LastActiveCheckTime < ACTIVE_COOLDOWN)
-		return false;
+        const int64_t CurrentTime = time_get();
+        if(CurrentTime - s_LastActiveCheckTime < ACTIVE_COOLDOWN)
+                return false;
 
-	s_LastActiveCheckTime = CurrentTime;
-	const CNetObj_PlayerInput &Input = m_aInputData[LocalPlayerId];
-	return (Input.m_Direction != 0 || Input.m_Jump != 0 || Input.m_Hook != 0);
+        s_LastActiveCheckTime = CurrentTime;
+        (void)LocalPlayerId;
+        return true;
+}
+
+bool CControls::FindClosestFreeze(vec2 Pos, float Radius, vec2 &OutDirection, float *pOutDistanceSquared) const
+{
+        if(!Collision())
+        {
+                OutDirection = vec2(0.0f, 0.0f);
+                if(pOutDistanceSquared)
+                        *pOutDistanceSquared = Radius * Radius;
+                return false;
+        }
+
+        const int Width = Collision()->GetWidth();
+        const int Height = Collision()->GetHeight();
+        if(Width <= 0 || Height <= 0)
+        {
+                OutDirection = vec2(0.0f, 0.0f);
+                if(pOutDistanceSquared)
+                        *pOutDistanceSquared = Radius * Radius;
+                return false;
+        }
+
+        const float RadiusSquared = Radius * Radius;
+        bool Found = false;
+        float BestDistanceSquared = RadiusSquared;
+
+        const int MinTileX = maximum(0, static_cast<int>(std::floor((Pos.x - Radius) / 32.0f)));
+        const int MaxTileX = minimum(Width - 1, static_cast<int>(std::floor((Pos.x + Radius) / 32.0f)));
+        const int MinTileY = maximum(0, static_cast<int>(std::floor((Pos.y - Radius) / 32.0f)));
+        const int MaxTileY = minimum(Height - 1, static_cast<int>(std::floor((Pos.y + Radius) / 32.0f)));
+
+        for(int TileY = MinTileY; TileY <= MaxTileY; ++TileY)
+        {
+                for(int TileX = MinTileX; TileX <= MaxTileX; ++TileX)
+                {
+                        const int Index = TileY * Width + TileX;
+                        const int Tile = Collision()->GetTileIndex(Index);
+                        const int FrontTile = Collision()->GetFrontTileIndex(Index);
+                        const int SwitchTile = Collision()->GetSwitchType(Index);
+
+                        if(!IsFreezeTile(Tile) && !IsFreezeTile(FrontTile) && !IsFreezeTile(SwitchTile))
+                                continue;
+
+                        const vec2 TileCenter = vec2(TileX * 32.0f + 16.0f, TileY * 32.0f + 16.0f);
+                        const vec2 Delta = TileCenter - Pos;
+                        const float DistanceSquared = length_squared(Delta);
+
+                        if(DistanceSquared <= BestDistanceSquared)
+                        {
+                                BestDistanceSquared = DistanceSquared;
+                                OutDirection = Delta;
+                                Found = true;
+                        }
+                }
+        }
+
+        if(!Found)
+        {
+                OutDirection = vec2(0.0f, 0.0f);
+                if(pOutDistanceSquared)
+                        *pOutDistanceSquared = RadiusSquared;
+                return false;
+        }
+
+        if(pOutDistanceSquared)
+                *pOutDistanceSquared = BestDistanceSquared;
+
+        return true;
+}
+
+bool CControls::IsFreezeTile(int Tile)
+{
+        return Tile == TILE_FREEZE || Tile == TILE_DFREEZE || Tile == TILE_LFREEZE;
 }
 
 void CControls::HookAssist()
