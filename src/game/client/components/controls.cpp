@@ -1,6 +1,7 @@
 /* (c) Magnus Auvinen. See licence.txt in the root of the distribution for more information. */
 /* If you are missing that file, acquire a complete release at teeworlds.com.                */
 #include <base/math.h>
+#include <algorithm>
 
 #include <engine/client.h>
 #include <engine/shared/config.h>
@@ -16,6 +17,10 @@
 #include <base/vmath.h>
 
 #include "controls.h"
+
+int64_t CControls::s_LastAvoidTime = 0;
+int64_t CControls::s_LastActiveCheckTime = 0;
+const int64_t CControls::ACTIVE_COOLDOWN = time_freq() / 10;
 
 CControls::CControls()
 {
@@ -340,8 +345,11 @@ int CControls::SnapInput(int *pData)
 
 void CControls::OnRender()
 {
-        if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
-                return;
+	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
+		return;
+
+	AvoidFreeze();
+	HookAssist();
 
 	if(g_Config.m_ClAutoswitchWeaponsOutOfAmmo && !GameClient()->m_GameInfo.m_UnlimitedAmmo && GameClient()->m_Snap.m_pLocalCharacter)
 	{
@@ -381,13 +389,110 @@ void CControls::OnRender()
 	else
 	{
                 m_aTargetPos[g_Config.m_ClDummy] = m_aMousePos[g_Config.m_ClDummy];
-        }
+	}
+}
+
+void CControls::AvoidFreeze()
+{
+	if(!g_Config.m_DrBrc)
+		return;
+
+	const int64_t CurrentTime = time_get();
+
+	if(!IsAvoidCooldownElapsed(CurrentTime))
+		return;
+
+	const int LocalPlayerId = g_Config.m_ClDummy;
+
+	if(!IsPlayerActive(LocalPlayerId))
+		return;
+
+	if(PredictFreeze(m_aInputData[LocalPlayerId], g_Config.m_DrBba) && TryAvoidFreeze(LocalPlayerId))
+	{
+		UpdateAvoidCooldown(CurrentTime);
+		dbg_msg("avoidfreeze", "Avoided freeze! Direction changed");
+	}
+}
+
+bool CControls::IsPlayerInDanger(int LocalPlayerId)
+{
+	return PredictFreeze(m_aInputData[LocalPlayerId], 1);
+}
+
+bool CControls::GetFreeze(vec2 Pos, int FreezeTime)
+{
+	if(FreezeTime > 0)
+		return true;
+
+	int MapIndex = Collision()->GetMapIndex(Pos);
+	return Collision()->IsTeleport(MapIndex) ||
+		Collision()->IsCheckTeleport(MapIndex) ||
+		Collision()->IsDeathTile(MapIndex);
+}
+
+bool CControls::IsAvoidCooldownElapsed(int64_t CurrentTime)
+{
+	const int64_t MinAvoidDelay = time_freq() * 500 / 1000;
+	const int64_t ConfiguredDelay = static_cast<int64_t>(g_Config.m_DrMac) * time_freq() / 1000;
+	return (CurrentTime - s_LastAvoidTime >= std::max(ConfiguredDelay, MinAvoidDelay));
+}
+
+void CControls::UpdateAvoidCooldown(int64_t CurrentTime)
+{
+	s_LastAvoidTime = CurrentTime;
+}
+
+bool CControls::PredictFreeze(const CNetObj_PlayerInput &Input, int Ticks)
+{
+	if(!GameClient()->m_Snap.m_pLocalCharacter)
+		return false;
+
+	// Если уже заморожен
+	if(GameClient()->m_Snap.m_pLocalCharacter->m_FreezeEnd > 0)
+		return true;
+
+	// Простое предсказание - проверяем текущую позицию
+	return GetFreeze(GameClient()->m_LocalCharacterPos, 0);
+}
+
+bool CControls::TryAvoidFreeze(int LocalPlayerId)
+{
+	const int Directions[] = {0, -1, 1};
+	const CNetObj_PlayerInput BaseInput = m_aInputData[LocalPlayerId];
+
+	for(int i = 0; i < 3; i++)
+	{
+		int Direction = Directions[i];
+		if(Direction == BaseInput.m_Direction)
+			continue;
+
+		CNetObj_PlayerInput ModifiedInput = BaseInput;
+		ModifiedInput.m_Direction = Direction;
+
+		if(!PredictFreeze(ModifiedInput, g_Config.m_DrBba))
+		{
+			m_aInputData[LocalPlayerId].m_Direction = Direction;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool CControls::IsPlayerActive(int LocalPlayerId)
+{
+	const int64_t CurrentTime = time_get();
+	if(CurrentTime - s_LastActiveCheckTime < ACTIVE_COOLDOWN)
+		return false;
+
+	s_LastActiveCheckTime = CurrentTime;
+	const CNetObj_PlayerInput &Input = m_aInputData[LocalPlayerId];
+	return (Input.m_Direction != 0 || Input.m_Jump != 0 || Input.m_Hook != 0);
 }
 
 void CControls::HookAssist()
 {
-        if(!g_Config.m_ClHookAssist)
-                return;
+	if(!g_Config.m_ClHookAssist)
+		return;
 
         const int Dummy = g_Config.m_ClDummy;
         const int LocalId = GameClient()->m_aLocalIds[Dummy];
